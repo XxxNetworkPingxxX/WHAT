@@ -1,0 +1,785 @@
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local SoundService = game:GetService("SoundService")
+
+local Player = Players.LocalPlayer
+local Character = Player.Character or Player.CharacterAdded:Wait()
+local Humanoid = Character:WaitForChild("Humanoid")
+local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+
+-- Common assets (from your scripts)
+local BLACK_FIGURE_IMAGE_ID = "rbxassetid://9360984353"
+local SCREAMER_SOUND_ID = "rbxassetid://9043345732"
+
+-- Internal state
+local stopped = false
+local charAddedConnection
+local function refreshCharacterRefs(char)
+    Character = char
+    Humanoid = Character:WaitForChild("Humanoid")
+    HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+end
+charAddedConnection = Player.CharacterAdded:Connect(refreshCharacterRefs)
+
+-- Helper: safe destroy
+local function safeDestroy(obj)
+    if obj and obj.Parent then
+        pcall(function() obj:Destroy() end)
+    end
+end
+
+-- --- Inizio parte “allucinazione testi / fiori” dal tuo primo script ---
+-- Salva i testi originali
+local originalTexts = {}
+
+local function scrambleTexts()
+    for _, d in ipairs(Player.PlayerGui:GetDescendants()) do
+        if (d:IsA("TextLabel") or d:IsA("TextButton")) and not originalTexts[d] then
+            originalTexts[d] = d.Text
+            d.Text = "פרחים"
+        end
+    end
+end
+
+local function restoreTexts()
+    for obj, text in pairs(originalTexts) do
+        if obj and obj.Parent then
+            obj.Text = text
+        end
+    end
+    originalTexts = {}
+end
+-- --- Fine parte “allucinazione testi” ---
+
+--------------------------------------------------------------------------------
+-- PHASE 1
+--------------------------------------------------------------------------------
+local function phase1()
+    if stopped then return end
+    print("[Phase1] starting")
+
+    local TELEPORT_INTERVAL = 30
+    local BLACK_FIGURE_VISUAL_WIDTH = 10
+    local BLACK_FIGURE_VISUAL_HEIGHT = 15
+    local BLACK_FIGURE_VISUAL_DEPTH = 0.1
+    local BLACK_FIGURE_HITBOX_WIDTH = 20
+    local BLACK_FIGURE_HITBOX_HEIGHT = 30
+    local BLACK_FIGURE_HITBOX_DEPTH = 20
+
+    local blackVisual, blackHitbox
+    local isTouched = false
+    local touchedCon
+
+    local function create()
+        local visual = Instance.new("Part")
+        visual.Name = "Unified_BlackFigure_Visual_Phase1"
+        visual.Anchored = true
+        visual.CanCollide = false
+        visual.Transparency = 1
+        visual.Size = Vector3.new(BLACK_FIGURE_VISUAL_WIDTH, BLACK_FIGURE_VISUAL_HEIGHT, BLACK_FIGURE_VISUAL_DEPTH)
+        visual.BrickColor = BrickColor.new("Really black")
+        visual.Parent = Workspace
+
+        local decal = Instance.new("Decal")
+        decal.Texture = BLACK_FIGURE_IMAGE_ID
+        decal.Face = Enum.NormalId.Front
+        decal.Parent = visual
+
+        local hitbox = Instance.new("Part")
+        hitbox.Name = "Unified_BlackFigure_Hitbox_Phase1"
+        hitbox.Anchored = true
+        hitbox.CanCollide = false
+        hitbox.Transparency = 1
+        hitbox.Size = Vector3.new(BLACK_FIGURE_HITBOX_WIDTH, BLACK_FIGURE_HITBOX_HEIGHT, BLACK_FIGURE_HITBOX_DEPTH)
+        hitbox.Parent = Workspace
+
+        return visual, hitbox
+    end
+
+    local function position(visual, hitbox)
+        if not HumanoidRootPart or not visual or not hitbox then return end
+        local dist = math.random(20, 60)
+        local angle = math.random() * math.pi * 2
+        local x = HumanoidRootPart.Position.X + dist * math.cos(angle)
+        local z = HumanoidRootPart.Position.Z + dist * math.sin(angle)
+        local rayParams = RaycastParams.new()
+        rayParams.FilterDescendantsInstances = {visual, hitbox}
+        rayParams.FilterType = Enum.RaycastFilterType.Exclude
+        local result = Workspace:Raycast(
+            Vector3.new(x, HumanoidRootPart.Position.Y + 50, z),
+            Vector3.new(0, -100, 0),
+            rayParams
+        )
+        local y = HumanoidRootPart.Position.Y + (BLACK_FIGURE_VISUAL_HEIGHT / 2)
+        if result then
+            y = result.Position.Y + (BLACK_FIGURE_VISUAL_HEIGHT / 2)
+        end
+        local cf = CFrame.new(x, y, z)
+        visual.CFrame = cf
+        hitbox.CFrame = cf
+    end
+
+    local function onTouched(hit)
+        if isTouched then return end
+        local pl = Players:GetPlayerFromCharacter(hit.Parent)
+        if pl == Player then
+            isTouched = true
+            warn("[Phase1] touched -> chaotic teleport sequence")
+            safeDestroy(blackVisual)
+            safeDestroy(blackHitbox)
+            task.spawn(function()
+                for i = 1, 29 do
+                    local rx = math.random(-5000, 5000)
+                    local ry = math.random(100, 500)
+                    local rz = math.random(-5000, 5000)
+                    if HumanoidRootPart then
+                        HumanoidRootPart.CFrame = CFrame.new(rx, ry, rz)
+                        task.wait(0.05)
+                    end
+                end
+                task.wait(0.1)
+                if HumanoidRootPart and Humanoid then
+                    HumanoidRootPart.CFrame = CFrame.new(0, -10000, 0)
+                    Humanoid.Health = 0
+                end
+                warn("[Phase1] player killed. proceeding to Phase2 after respawn")
+            end)
+        end
+    end
+
+    blackVisual, blackHitbox = create()
+    touchedCon = blackHitbox.Touched:Connect(onTouched)
+    position(blackVisual, blackHitbox)
+
+    local adjustConn = RunService.RenderStepped:Connect(function()
+        if isTouched or stopped then
+            if adjustConn then adjustConn:Disconnect() end
+            return
+        end
+        if blackVisual and HumanoidRootPart then
+            local dist = (blackVisual.Position - HumanoidRootPart.Position).Magnitude
+            local scale = 1 + (math.max(10, dist) / 50) * 0.5
+            blackVisual.Size = Vector3.new(BLACK_FIGURE_VISUAL_WIDTH * scale, BLACK_FIGURE_VISUAL_HEIGHT * scale, BLACK_FIGURE_VISUAL_DEPTH)
+            local lookAt = CFrame.lookAt(blackVisual.Position, HumanoidRootPart.Position)
+            blackVisual.CFrame = lookAt
+            blackHitbox.CFrame = CFrame.new(blackHitbox.Position) * (lookAt - lookAt.Position)
+        end
+    end)
+
+    local teleLoop = task.spawn(function()
+        while not isTouched and not stopped do
+            task.wait(TELEPORT_INTERVAL)
+            if not isTouched and blackVisual and blackHitbox and HumanoidRootPart then
+                position(blackVisual, blackHitbox)
+            end
+        end
+    end)
+
+    local timeout = 60
+    local elapsed = 0
+    while not isTouched and elapsed < timeout and not stopped do
+        task.wait(1)
+        elapsed = elapsed + 1
+    end
+
+    if touchedCon and touchedCon.Connected then touchedCon:Disconnect() end
+    safeDestroy(blackVisual)
+    safeDestroy(blackHitbox)
+    if adjustConn and adjustConn.Connected then adjustConn:Disconnect() end
+    if teleLoop then task.cancel(teleLoop) end
+
+    print("[Phase1] finished")
+end
+
+--------------------------------------------------------------------------------
+-- PHASE 2
+--------------------------------------------------------------------------------
+local function phase2()
+    if stopped then return end
+    print("[Phase2] starting")
+
+    local TELEPORT_INTERVAL = 3
+    local MIN_DIST_FROM_PLAYER = 15
+    local MAX_DIST_FROM_PLAYER = 30
+    local SHAKE_MAGNITUDE = 0.5
+    local BLACK_FIGURE_VISUAL_WIDTH = 10
+    local BLACK_FIGURE_VISUAL_HEIGHT = 15
+    local BLACK_FIGURE_VISUAL_DEPTH = 0.1
+    local BLACK_FIGURE_HITBOX_WIDTH = 20
+    local BLACK_FIGURE_HITBOX_HEIGHT = 30
+    local BLACK_FIGURE_HITBOX_DEPTH = 20
+
+    local blackVisual, blackHitbox
+    local isTouched = false
+    local touchedCon
+
+    local function create()
+        local visual = Instance.new("Part")
+        visual.Name = "Unified_BlackFigure_Visual_Phase2"
+        visual.Anchored = true
+        visual.CanCollide = false
+        visual.CastShadow = false
+        visual.Transparency = 1
+        visual.Size = Vector3.new(BLACK_FIGURE_VISUAL_WIDTH, BLACK_FIGURE_VISUAL_HEIGHT, BLACK_FIGURE_VISUAL_DEPTH)
+        visual.Parent = Workspace
+
+        local decalF = Instance.new("Decal")
+        decalF.Texture = BLACK_FIGURE_IMAGE_ID
+        decalF.Face = Enum.NormalId.Front
+        decalF.Parent = visual
+        local decalB = Instance.new("Decal")
+        decalB.Texture = BLACK_FIGURE_IMAGE_ID
+        decalB.Face = Enum.NormalId.Back
+        decalB.Parent = visual
+
+        local hitbox = Instance.new("Part")
+        hitbox.Name = "Unified_BlackFigure_Hitbox_Phase2"
+        hitbox.Anchored = true
+        hitbox.CanCollide = false
+        hitbox.CanTouch = true
+        hitbox.CanQuery = false
+        hitbox.CastShadow = false
+        hitbox.Transparency = 1
+        hitbox.Size = Vector3.new(BLACK_FIGURE_HITBOX_WIDTH, BLACK_FIGURE_HITBOX_HEIGHT, BLACK_FIGURE_HITBOX_DEPTH)
+        hitbox.Parent = Workspace
+
+        return visual, hitbox
+    end
+
+    local function position()
+        if not HumanoidRootPart or not blackVisual or not blackHitbox then return end
+        local dist = math.random(MIN_DIST_FROM_PLAYER, MAX_DIST_FROM_PLAYER)
+        local angle = math.random() * math.pi * 2
+        local x = HumanoidRootPart.Position.X + dist * math.cos(angle)
+        local z = HumanoidRootPart.Position.Z + dist * math.sin(angle)
+        local rayParams = RaycastParams.new()
+        rayParams.FilterDescendantsInstances = {blackVisual, blackHitbox}
+        rayParams.FilterType = Enum.RaycastFilterType.Exclude
+        local result = Workspace:Raycast(
+            Vector3.new(x, HumanoidRootPart.Position.Y + 50, z),
+            Vector3.new(0, -100, 0),
+            rayParams
+        )
+        local y = HumanoidRootPart.Position.Y + 5
+        if result then
+            y = result.Position.Y + (BLACK_FIGURE_VISUAL_HEIGHT / 2)
+        end
+        local cf = CFrame.new(x, y, z)
+        blackVisual.CFrame = cf
+        blackHitbox.CFrame = cf
+    end
+
+    local function applyShake(cf)
+        local rx = (math.random() * 2 - 1) * SHAKE_MAGNITUDE
+        local ry = (math.random() * 2 - 1) * SHAKE_MAGNITUDE
+        local rz = (math.random() * 2 - 1) * SHAKE_MAGNITUDE
+        return cf * CFrame.new(rx, ry, rz)
+    end
+
+    local function adjust()
+        if blackVisual and blackHitbox and HumanoidRootPart then
+            local dist = (blackVisual.Position - HumanoidRootPart.Position).Magnitude
+            local scale = 1 + (math.max(10, dist) / 50) * 0.5
+            blackVisual.Size = Vector3.new(BLACK_FIGURE_VISUAL_WIDTH * scale, BLACK_FIGURE_VISUAL_HEIGHT * scale, BLACK_FIGURE_VISUAL_DEPTH)
+            local lookAt = CFrame.lookAt(blackVisual.Position, HumanoidRootPart.Position)
+            blackVisual.CFrame = applyShake(lookAt)
+            blackHitbox.CFrame = CFrame.new(blackHitbox.Position, HumanoidRootPart.Position)
+        end
+    end
+
+    local function fadeOut()
+        for i = 1, 10 do
+            if blackVisual then
+                blackVisual.Transparency = math.clamp((blackVisual.Transparency or 0) + 0.1, 0, 1)
+            end
+            task.wait(0.05)
+        end
+    end
+
+    local function onTouched(hit)
+        if isTouched then return end
+        local pl = Players:GetPlayerFromCharacter(hit.Parent)
+        if pl == Player then
+            isTouched = true
+            warn("[Phase2] touched -> fade and proceed")
+            fadeOut()
+            safeDestroy(blackVisual)
+            safeDestroy(blackHitbox)
+        end
+    end
+
+    blackVisual, blackHitbox = create()
+    touchedCon = blackHitbox.Touched:Connect(onTouched)
+    position()
+
+    local adjustConn = RunService.RenderStepped:Connect(function()
+        if not isTouched and not stopped then
+            adjust()
+        end
+    end)
+
+    local teleLoop = task.spawn(function()
+        while not isTouched and not stopped do
+            task.wait(TELEPORT_INTERVAL)
+            if not isTouched then position() end
+        end
+    end)
+
+    local maxTime = 30
+    local t = 0
+    while not isTouched and t < maxTime and not stopped do
+        task.wait(1)
+        t = t + 1
+    end
+
+    if touchedCon and touchedCon.Connected then touchedCon:Disconnect() end
+    if adjustConn and adjustConn.Connected then adjustConn:Disconnect() end
+    if teleLoop then task.cancel(teleLoop) end
+    safeDestroy(blackVisual)
+    safeDestroy(blackHitbox)
+
+    print("[Phase2] finished")
+end
+
+--------------------------------------------------------------------------------
+-- PHASE 3
+--------------------------------------------------------------------------------
+local function phase3()
+    if stopped then return end
+    print("[Phase3] starting")
+
+    local DIALOGUE_TEXT = "do you think cheating is funny?"
+    local TEXT_DISPLAY_TIME = 4
+    local SCREAMER_VOLUME = 5
+    local BLACK_FIGURE_DISPLAY_TIME = 5
+    local BLACK_FIGURE_DIST_FROM_PLAYER = 10
+    local BLACK_FIGURE_VISUAL_WIDTH = 10
+    local BLACK_FIGURE_VISUAL_HEIGHT = 15
+    local BLACK_FIGURE_VISUAL_DEPTH = 0.1
+
+    local originalLighting = {
+        Ambient = Lighting.Ambient,
+        OutdoorAmbient = Lighting.OutdoorAmbient,
+        Brightness = Lighting.Brightness,
+        TimeOfDay = Lighting.TimeOfDay,
+        FogColor = Lighting.FogColor,
+        FogEnd = Lighting.FogEnd,
+        GlobalShadows = Lighting.GlobalShadows
+    }
+
+    local function createVisual()
+        local part = Instance.new("Part")
+        part.Name = "Unified_BlackFigure_Visual_Phase3"
+        part.Anchored = true
+        part.CanCollide = false
+        part.Transparency = 1
+        part.Size = Vector3.new(BLACK_FIGURE_VISUAL_WIDTH, BLACK_FIGURE_VISUAL_HEIGHT, BLACK_FIGURE_VISUAL_DEPTH)
+        part.BrickColor = BrickColor.new("Really Black")
+        local decal = Instance.new("Decal")
+        decal.Texture = BLACK_FIGURE_IMAGE_ID
+        decal.Face = Enum.NormalId.Front
+        decal.Transparency = 0
+        decal.Parent = part
+        local redLight = Instance.new("PointLight")
+        redLight.Color = Color3.new(1,0,0)
+        redLight.Range = 18
+        redLight.Brightness = 10
+        redLight.Shadows = true
+        redLight.Parent = part
+        part.Parent = Workspace
+        return part, decal, redLight
+    end
+
+    local function showDialogue()
+        local playerGui = Player:FindFirstChild("PlayerGui")
+        if not playerGui then return end
+        local screenGui = Instance.new("ScreenGui", playerGui)
+        screenGui.Name = "Unified_Dialogue_Phase3"
+        local label = Instance.new("TextLabel", screenGui)
+        label.Size = UDim2.new(0.8, 0, 0.2, 0)
+        label.Position = UDim2.new(0.5, 0, 0.1, 0)
+        label.AnchorPoint = Vector2.new(0.5, 0.5)
+        label.BackgroundTransparency = 1
+        label.TextScaled = true
+        label.TextColor3 = Color3.new(1, 0, 0)
+        label.TextStrokeTransparency = 0
+        label.TextStrokeColor3 = Color3.new(0, 0, 0)
+        label.Text = DIALOGUE_TEXT
+        label.Font = Enum.Font.Highway
+        label.TextTransparency = 1
+        label.TextStrokeTransparency = 1
+        TweenService:Create(label, TweenInfo.new(0.5), { TextTransparency = 0, TextStrokeTransparency = 0 }):Play()
+        task.wait(TEXT_DISPLAY_TIME)
+        TweenService:Create(label, TweenInfo.new(0.5), { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
+        task.wait(0.6)
+        safeDestroy(screenGui)
+    end
+
+    local function playScreamer()
+        for i = 0, 4 do
+            task.delay(i * 3, function()
+                local sound = Instance.new("Sound")
+                sound.SoundId = SCREAMER_SOUND_ID
+                sound.Volume = SCREAMER_VOLUME
+                sound.Parent = Workspace
+                sound:Play()
+                sound.Ended:Connect(function()
+                    safeDestroy(sound)
+                end)
+            end)
+        end
+    end
+
+    local function applyLighting()
+        Lighting.Ambient = Color3.new(0.05, 0.05, 0.05)
+        Lighting.OutdoorAmbient = Color3.new(0.05, 0.05, 0.05)
+        Lighting.Brightness = 0
+        Lighting.TimeOfDay = "23:00:00"
+        Lighting.FogColor = Color3.new(0.1, 0, 0)
+        Lighting.FogEnd = 10000
+        Lighting.GlobalShadows = true
+    end
+
+    -- Non ripristiniamo la luce alla fine: la luce rimane oscurata per sempre dopo l'apparizione
+    local visual, decal, redLight = createVisual()
+    local spawnPos = HumanoidRootPart.Position - HumanoidRootPart.CFrame.LookVector * BLACK_FIGURE_DIST_FROM_PLAYER
+    visual.CFrame = CFrame.new(spawnPos)
+    applyLighting()
+    task.spawn(showDialogue)
+    playScreamer()
+    task.wait(BLACK_FIGURE_DISPLAY_TIME)
+
+    if decal then
+        TweenService:Create(decal, TweenInfo.new(1), { Transparency = 1 }):Play()
+        task.wait(1)
+    end
+    safeDestroy(redLight)
+    safeDestroy(visual)
+    warn("[Phase3] finished")
+end
+
+--------------------------------------------------------------------------------
+-- PHASE 4
+--------------------------------------------------------------------------------
+local function phase4()
+    if stopped then return end
+    print("[Phase4] starting")
+
+    local COUNTDOWN_START = 10
+    local BLACK_FIGURE_DIST_FROM_PLAYER = 15
+    local BLACK_FIGURE_VISUAL_WIDTH = 12
+    local BLACK_FIGURE_VISUAL_HEIGHT = 18
+    local BLACK_FIGURE_VISUAL_DEPTH = 0.1
+    local CAMERA_SHAKE_INTENSITY = 0.5
+    local SHAKE_DURATION = 3
+
+    local function showDialogueText(text, displayTime)
+        local playerGui = Player:WaitForChild("PlayerGui")
+        local screenGui = Instance.new("ScreenGui", playerGui)
+        screenGui.Name = "Unified_Dialogue_Phase4"
+        local textLabel = Instance.new("TextLabel", screenGui)
+        textLabel.Size = UDim2.new(0.8, 0, 0.2, 0)
+        textLabel.Position = UDim2.new(0.5, 0, 0.1, 0)
+        textLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+        textLabel.BackgroundTransparency = 1
+        textLabel.TextScaled = true
+        textLabel.TextColor3 = Color3.new(1, 0, 0)
+        textLabel.TextStrokeTransparency = 0
+        textLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+        textLabel.Text = text
+        textLabel.Font = Enum.Font.Highway
+        textLabel.TextTransparency = 1
+        TweenService:Create(textLabel, TweenInfo.new(0.5), { TextTransparency = 0, TextStrokeTransparency = 0 }):Play()
+        task.wait(displayTime)
+        TweenService:Create(textLabel, TweenInfo.new(0.5), { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
+        task.wait(0.6)
+        safeDestroy(screenGui)
+    end
+
+    local function createBlackFigure()
+        local visualPart = Instance.new("Part")
+        visualPart.Name = "Unified_BlackFigure_Phase4"
+        visualPart.Anchored = true
+        visualPart.CanCollide = false
+        visualPart.Transparency = 1
+        visualPart.Size = Vector3.new(BLACK_FIGURE_VISUAL_WIDTH, BLACK_FIGURE_VISUAL_HEIGHT, BLACK_FIGURE_VISUAL_DEPTH)
+        visualPart.BrickColor = BrickColor.new("Really Black")
+        local decal = Instance.new("Decal")
+        decal.Texture = BLACK_FIGURE_IMAGE_ID
+        decal.Face = Enum.NormalId.Front
+        decal.Transparency = 0
+        decal.Parent = visualPart
+        local light = Instance.new("PointLight")
+        light.Color = Color3.new(1, 0, 0)
+        light.Range = 20
+        light.Brightness = 3
+        light.Parent = visualPart
+        visualPart.Parent = Workspace
+        return visualPart, decal, light
+    end
+
+    local cameraShakeConnection
+    local function startShake(duration, intensity)
+        local startTime = tick()
+        local originalCFrame = Workspace.CurrentCamera.CFrame
+        cameraShakeConnection = RunService.RenderStepped:Connect(function()
+            local elapsed = tick() - startTime
+            if elapsed < duration then
+                local factor = 1 - (elapsed / duration)
+                local offset = intensity * factor
+                Workspace.CurrentCamera.CFrame = originalCFrame * CFrame.new(
+                    math.random(-offset * 100, offset * 100) / 100,
+                    math.random(-offset * 100, offset * 100) / 100,
+                    math.random(-offset * 100, offset * 100) / 100
+                )
+            else
+                Workspace.CurrentCamera.CFrame = originalCFrame
+                if cameraShakeConnection then
+                    cameraShakeConnection:Disconnect()
+                    cameraShakeConnection = nil
+                end
+            end
+        end)
+    end
+
+    task.delay(0.0, function() print("[Phase4] effect 1 simulated") end)
+    task.delay(3.0, function() print("[Phase4] effect 2 simulated") end)
+    task.delay(7.0, function() print("[Phase4] effect 3 simulated") end)
+
+    task.delay(10, function()
+        local part, decal, light = createBlackFigure()
+        local look = HumanoidRootPart.CFrame.LookVector
+        local pos = HumanoidRootPart.Position + look * BLACK_FIGURE_DIST_FROM_PLAYER
+        part.CFrame = CFrame.new(pos)
+        local followConn = RunService.RenderStepped:Connect(function()
+            if part and HumanoidRootPart then
+                local posp = part.Position
+                local lookC = CFrame.lookAt(posp, HumanoidRootPart.Position)
+                part.CFrame = CFrame.new(posp) * (lookC - lookC.Position)
+            end
+        end)
+
+        showDialogueText("let's see if your little hacks will save you now", 4)
+
+        local playerGui = Player:WaitForChild("PlayerGui")
+        local screenGui = Instance.new("ScreenGui", playerGui)
+        screenGui.Name = "Unified_Countdown"
+        local countLabel = Instance.new("TextLabel", screenGui)
+        countLabel.Size = UDim2.new(0.5, 0, 0.3, 0)
+        countLabel.Position = UDim2.new(0.5, 0, 0.5, 0)
+        countLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+        countLabel.BackgroundTransparency = 1
+        countLabel.TextScaled = true
+        countLabel.Font = Enum.Font.Highway
+        countLabel.TextColor3 = Color3.new(1, 1, 1)
+        countLabel.TextStrokeTransparency = 0
+        countLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+        local countdown = COUNTDOWN_START or 10
+        for i = countdown, 0, -1 do
+            countLabel.Text = tostring(i)
+            if i == 0 then
+                countLabel.TextColor3 = Color3.new(1, 0, 0)
+                startShake(SHAKE_DURATION, CAMERA_SHAKE_INTENSITY)
+                -- **QUI** all’interno dello “scatto dello 0”, attiva anche l’effetto allucinazione testi
+                scrambleTexts()
+            end
+            task.wait(1)
+        end
+
+        safeDestroy(screenGui)
+        if followConn and followConn.Connected then followConn:Disconnect() end
+        if decal then
+            TweenService:Create(decal, TweenInfo.new(1), { Transparency = 1 }):Play()
+            task.wait(1)
+        end
+        safeDestroy(light)
+        safeDestroy(part)
+        if cameraShakeConnection and cameraShakeConnection.Connected then cameraShakeConnection:Disconnect() end
+        print("[Phase4] finished")
+    end)
+
+    local waitCount = 0
+    while waitCount < 30 and not stopped do
+        task.wait(1)
+        waitCount = waitCount + 1
+    end
+end
+
+--------------------------------------------------------------------------------
+-- PHASE 5 (modificata per accelerazione regolabile)
+--------------------------------------------------------------------------------
+local function phase5()
+    if stopped then return end
+    print("[Phase5] starting")
+
+    local INITIAL_FIGURE_DIST_FROM_PLAYER = 500
+    local INITIAL_FIGURE_HEIGHT_OFFSET = 20
+    local BLACK_FIGURE_VISUAL_WIDTH = 15
+    local BLACK_FIGURE_VISUAL_HEIGHT = 25
+    local BLACK_FIGURE_VISUAL_DEPTH = 0.1
+
+    local FIGURE_SPEED_INITIAL = 30
+    local FIGURE_SPEED_ACCELERATION = 0  -- puoi modificare questo valore
+    local LIGHT_BRIGHTNESS_INTENSITY = 20
+    local LIGHT_RANGE_INTENSITY = 75
+    local CAMERA_SHAKE_INTENSITY_FINAL = 1.5
+    local SCREAM_SOUND_ID_LOCAL = SCREAMER_SOUND_ID
+    local SCREAM_SOUND_VOLUME = 30
+    local SCREAM_INTERVAL = 0.05
+
+    local blackFigure = nil
+    local screamSounds = {}
+    local currentSpeed = FIGURE_SPEED_INITIAL
+    local cameraShakeConn
+    local figureMoveConn
+    local screamLoopActive = true
+
+    local phaseComplete = false
+
+    local function createVisual()
+        local part = Instance.new("Part")
+        part.Name = "Unified_BlackFigure_Final_Phase5"
+        part.Anchored = true
+        part.CanCollide = false
+        part.Transparency = 1
+        part.Size = Vector3.new(BLACK_FIGURE_VISUAL_WIDTH, BLACK_FIGURE_VISUAL_HEIGHT, BLACK_FIGURE_VISUAL_DEPTH)
+        part.BrickColor = BrickColor.new("Really Black")
+        local decal = Instance.new("Decal")
+        decal.Texture = BLACK_FIGURE_IMAGE_ID
+        decal.Face = Enum.NormalId.Front
+        decal.Parent = part
+        local light = Instance.new("PointLight")
+        light.Color = Color3.new(1, 0, 0)
+        light.Range = LIGHT_RANGE_INTENSITY
+        light.Brightness = LIGHT_BRIGHTNESS_INTENSITY
+        light.Parent = part
+        part.Parent = Workspace
+        return part
+    end
+
+    cameraShakeConn = RunService.RenderStepped:Connect(function()
+        if Workspace.CurrentCamera then
+            local offset = Vector3.new(
+                math.random() * CAMERA_SHAKE_INTENSITY_FINAL * 2 - CAMERA_SHAKE_INTENSITY_FINAL,
+                math.random() * CAMERA_SHAKE_INTENSITY_FINAL * 2 - CAMERA_SHAKE_INTENSITY_FINAL,
+                math.random() * CAMERA_SHAKE_INTENSITY_FINAL * 2 - CAMERA_SHAKE_INTENSITY_FINAL
+            )
+            Workspace.CurrentCamera.CFrame = Workspace.CurrentCamera.CFrame * CFrame.new(offset)
+        end
+    end)
+
+    local screamCoroutine = task.spawn(function()
+        while screamLoopActive and not stopped do
+            local s = Instance.new("Sound")
+            s.SoundId = SCREAM_SOUND_ID_LOCAL
+            s.Volume = SCREAM_SOUND_VOLUME
+            s.Looped = false
+            s.Parent = HumanoidRootPart
+            s:Play()
+            table.insert(screamSounds, s)
+            task.wait(SCREAM_INTERVAL)
+        end
+    end)
+
+    blackFigure = createVisual()
+    local dir = HumanoidRootPart.CFrame.LookVector
+    local startPos = HumanoidRootPart.Position - dir * INITIAL_FIGURE_DIST_FROM_PLAYER
+    startPos = Vector3.new(startPos.X, startPos.Y + INITIAL_FIGURE_HEIGHT_OFFSET, startPos.Z)
+    blackFigure.CFrame = CFrame.new(startPos, HumanoidRootPart.Position)
+
+    figureMoveConn = RunService.Heartbeat:Connect(function(dt)
+        if not blackFigure or stopped then return end
+        -- aggiorna velocità con accelerazione
+        currentSpeed = currentSpeed + FIGURE_SPEED_ACCELERATION * dt
+
+        if not blackFigure or not HumanoidRootPart then return end
+        local dirToPlayer = (HumanoidRootPart.Position - blackFigure.Position)
+        if dirToPlayer.Magnitude > 0 then dirToPlayer = dirToPlayer.Unit end
+        local newPos = blackFigure.Position + dirToPlayer * currentSpeed * dt
+        blackFigure.CFrame = CFrame.new(newPos, HumanoidRootPart.Position)
+
+        if (blackFigure.Position - HumanoidRootPart.Position).Magnitude < (BLACK_FIGURE_VISUAL_WIDTH / 2 + (Humanoid and Humanoid.HipHeight or 2) + 2) then
+            print("[Phase5] player captured -> proceed to phase6")
+            screamLoopActive = false
+            if screamCoroutine then task.cancel(screamCoroutine) end
+            if cameraShakeConn and cameraShakeConn.Connected then cameraShakeConn:Disconnect() end
+            if figureMoveConn and figureMoveConn.Connected then figureMoveConn:Disconnect() end
+            for _, s in ipairs(screamSounds) do
+                if s and s:IsA("Sound") then
+                    s:Stop()
+                    safeDestroy(s)
+                end
+            end
+            safeDestroy(blackFigure)
+
+            phaseComplete = true
+            return
+        end
+    end)
+
+    while not stopped and not phaseComplete do
+        task.wait(1)
+    end
+
+    screamLoopActive = false
+    if screamCoroutine then pcall(task.cancel, screamCoroutine) end
+    if cameraShakeConn and cameraShakeConn.Connected then cameraShakeConn:Disconnect() end
+    if figureMoveConn and figureMoveConn.Connected then figureMoveConn:Disconnect() end
+    for _, s in ipairs(screamSounds) do
+        if s and s:IsA("Sound") then
+            safeDestroy(s)
+        end
+    end
+    safeDestroy(blackFigure)
+    print("[Phase5] finished")
+end
+
+--------------------------------------------------------------------------------
+-- PHASE 6
+--------------------------------------------------------------------------------
+local function phase6()
+    if stopped then return end
+    print("[Phase6] starting (kick)")
+    local BAN_MESSAGE = "YOU HAVE BEEN Caught =)"
+    local PlayerLocal = Players.LocalPlayer
+    if PlayerLocal then
+        pcall(function()
+            PlayerLocal:Kick(BAN_MESSAGE)
+        end)
+    else
+        warn("[Phase6] no LocalPlayer, cannot kick")
+    end
+end
+
+--------------------------------------------------------------------------------
+-- MAIN: run phases sequentially
+--------------------------------------------------------------------------------
+task.spawn(function()
+    pcall(function()
+        phase1()
+        task.wait(1)
+        phase2()
+        task.wait(0.5)
+        phase3()
+        task.wait(0.5)
+        phase4()
+        task.wait(12)
+        phase5()
+        task.wait(1)
+        phase6()
+    end)
+end)
+
+local function stopAll()
+    stopped = true
+    if charAddedConnection and charAddedConnection.Connected then
+        charAddedConnection:Disconnect()
+    end
+end
+_G.UnifiedHorrorStop = stopAll
+
+print("Unified Horror Sequence (phases 1..6) loaded.")
